@@ -27,7 +27,7 @@ lamb = 1.2
 event_list = event.Timeline()
 numpeer = 100000 
 #skala = 183*24*3600 #1/2 tahun * 366 hari * 24 jam * 3600 detik
-skala=2*24*3600
+skala=30*24*3600
 expected = 360 #360 peer per hour 
 multiple_of = range(100000)
 interval = 24*3600 
@@ -115,11 +115,11 @@ if __name__ == '__main__':
     #file_list7 = [ 'upload_done_events-1t-'+str(TIMELINE_LENGTH*(i+1)) for i in range(skala/TIMELINE_LENGTH) ]
     #print file_list7
 
-    #file_list8 = [ 'cache_content_cdn_events-1t-'+str(TIMELINE_LENGTH*(i+1)) for i in range(skala/TIMELINE_LENGTH) ]
-    #print file_list8
+    file_list8 = [ 'cache_content_cdn_events-1t-'+str(TIMELINE_LENGTH*(i+1)) for i in range(skala/TIMELINE_LENGTH) ]
+    print file_list8
 
-    #file_list9 = [ 'replica_events-1t-'+str(TIMELINE_LENGTH*(i+1)) for i in range(skala/TIMELINE_LENGTH) ]
-    #print file_list9
+    file_list9 = [ 'replica_events-1t-'+str(TIMELINE_LENGTH*(i+1)) for i in range(skala/TIMELINE_LENGTH) ]
+    print file_list9
 
 
     time_list_c = []
@@ -128,7 +128,7 @@ if __name__ == '__main__':
     time_list_c5 = []
     #time_list_c6 = []
     #time_list_c7 = []
-    #time_list_c8 = []
+    time_list_c8 = []
 
     #main loop; runs as long as there are events
     while event_list:
@@ -200,8 +200,8 @@ if __name__ == '__main__':
         #    time_list_c7.append(( next_event.time, str(next_event.actor) , next_event.type, next_event.action_params[0]))
 
         #cache content cdn
-        #if next_event.action.__name__ == 'cache_content_cdn':  
-        #    time_list_c8.append(( next_event.time, str(next_event.actor) , next_event.type, next_event.action_params[0]))
+        if next_event.action.__name__ == 'cache_content_cdn':  
+            time_list_c8.append(( next_event.time, str(next_event.actor) , next_event.type, next_event.action_params[0]))
 
 
         if (counter%TIMELINE_LENGTH)==TIMELINE_LENGTH-1:
@@ -304,13 +304,13 @@ if __name__ == '__main__':
     #    time_list_c7 = []
 
 
-    #if next_event.action.__name__ == 'cache_content_cdn':
-    #    filename8='cache_content_cdn_events-1t-'+ str(counter)
-    #    file_list8.append(filename8)
-    #    time_list_c8.append(( next_event.time, str(next_event.actor) , next_event.type, next_event.action_params[0]))
-    #    with open(filename8, 'wb') as f8:
-    #         pickle.dump(time_list_c8, f8) 
-    #    time_list_c8 = []
+    if next_event.action.__name__ == 'cache_content_cdn':
+        filename8='cache_content_cdn_events-1t-'+ str(counter)
+        file_list8.append(filename8)
+        time_list_c8.append(( next_event.time, str(next_event.actor) , next_event.type, next_event.action_params[0]))
+        with open(filename8, 'wb') as f8:
+             pickle.dump(time_list_c8, f8) 
+        time_list_c8 = []
 
     filename9='replica_events-1t-'+ str(counter+1)
     file_list9.append(filename9)

@@ -8,15 +8,18 @@ from operator import itemgetter
 #tandai ini model 
 
 
-fd=open(filename, "r")
+fd=open('datatest2d.dat', "r")
 
 x=[]
 y=[]
 z=[]
+m=0
 for line in fd:
+    #print m
     x.append( int(line.split()[0]))
     y.append( int(line.split()[1]))
     z.append( int(line.split()[2]))
+    m+=1
 fd.close()
 
 class CDN(object):
@@ -51,30 +54,30 @@ class CDN(object):
         self.peer_list = peer_list
 
 
-    def weighted_sample(items, n):
-    total = float(sum(w for w, v in items))
-    i = 0
+    def weighted_sample(self, items, n):
+        total = float(sum(w for w, v in items))
+        i = 0
 
-    w, v = items[0]
-    while n:
-        x = total * (1 - random.random() ** (1.0 / n))
-        total -= x
-        while x > w:
-            x -= w
-            i += 1
-            w, v = items[i]
-        w -= x
-        yield v #ini generator!!!!
-        n -= 1
+        w, v = items[0]
+        while n:
+            x = total * (1 - random.random() ** (1.0 / n))
+            total -= x
+            while x > w:
+                x -= w
+                i += 1
+                w, v = items[i]
+            w -= x
+            yield v #ini generator!!!!
+            n -= 1
 
 
     def catatan_weekly(self, t):
-    """
-    items = [(0.5, "1"),
-         (0.3, "2"),
-         (0.2, "3")]
-    """
-    weekly_prob=[ (0.18297472391,1), (0.264039475009,2), (0.12956933302,3), 
+        """
+        items = [(0.5, "1"),
+            (0.3, "2"),
+            (0.2, "3")]
+        """
+        weekly_prob=[ (0.18297472391,1), (0.264039475009,2), (0.12956933302,3), 
                   (0.0642140243698,4), (0.0789835856467,5), (0.0569299452855,6), 
                   (0.00386022624283,7), (0.00362525594978,8), (0.00493437615387,9),
                   (0.0114799771743,10), (0.0058071229566,11), (0.00228256856097,12), 
@@ -87,18 +90,18 @@ class CDN(object):
                   (0.0105065288174,31), (0.0250075526166,32), (0.0123862911618, 33),
                   (0.00288677788594,34), (0.00657916820516,35) ]
 
-    n=36
-    hasil=weighted_sample(items,n)
-    temp_hasil = []
-    for i in hasil:
-        temp_hasil.append(i)
-    temp_hasil.sort()
-    banyak = temp_hasil.count(t)
-    proba = t/float(n)
-    if proba < 0.25:
-        return -1 #tidak peak
-    else:
-        return 1 #positif peak
+        n=36
+        hasil=self.weighted_sample(weekly_prob,n)
+        temp_hasil = []
+        for i in hasil:
+            temp_hasil.append(i)
+        temp_hasil.sort()
+        banyak = temp_hasil.count(t)
+        proba = t/float(n)
+        if proba < 0.25:
+            return -1 #tidak peak
+        else:
+            return 1 #positif peak
 
 
 
@@ -119,6 +122,21 @@ class CDN(object):
         """
         hitung k nn neighbors
         """
+        panjang=len(x)
+        temp_x_1=[]
+        temp_y_1=[]
+        temp_z_1=[]
+
+        temp_x_2=[]
+        temp_y_2=[]
+        temp_z_2=[]
+
+        temp_x_3=[]
+        temp_y_3=[]
+        temp_z_3=[]
+
+        hasil = []
+
         if x_cari == 0:
             for i in range(panjang):
                 if (x[i] == x_cari):
@@ -341,9 +359,11 @@ class CDN(object):
         #selisih = t_cur - t_upload
         upload_time = self.content_catalog[content_id][1]
         waktu_terakhir_akses=self.get_video_last_time_requested(content_id)
-        selisih = waktu_terakhir_akses - upload_time
+        #selisih = waktu_terakhir_akses - upload_time
+        selisih = t_cur - upload_time
 
         minggu,second = divmod(selisih, 7*24*60*60)
+        minggu = int(minggu)
 
         #kalau minggu 0
         #view rate yng dipakai 
@@ -356,8 +376,12 @@ class CDN(object):
             #view rate yng dipakai view rate pada minggu tsb
             #view count pada saat ini - view count terakhir minggu lalu
             view_count_saat_ini = self.get_number_requested_video(content_id)-1
-            view_count_terakhir_minggu_lalu = self.mingguan[content_id][minggu-1] 
-            
+            if not self.mingguan[content_id].has_key(minggu-1):
+                self.mingguan[content_id][minggu-1]=0
+                view_count_terakhir_minggu_lalu = self.mingguan[content_id][minggu-1]
+            else:
+                view_count_terakhir_minggu_lalu = self.mingguan[content_id][minggu-1] 
+                
             view_rate = view_count_saat_ini - view_count_terakhir_minggu_lalu
 
         hasil=self.hitung_kmeans(minggu,view_rate)
@@ -497,6 +521,7 @@ class CDN(object):
         #self.mingguan[content_id]['jumlah']=jumlah_request
 
         minggu,second = divmod(selisih, 7*24*60*60)
+        minggu = int(minggu)
         self.mingguan[content_id][minggu]=jumlah_request
         
 
@@ -565,7 +590,7 @@ class CDN(object):
                         video_size_dng_p_min = tup[1]
 
                         del self.cache_size[video_id_dng_p_min]
-                        del self.cache_entries[video_id_dng_u_min]
+                        del self.cache_entries[video_id_dng_p_min]
                         jumlah=sum(self.cache_size.values())
                     self.cache_entries[content_id]=this_content
                     self.cache_size[content_id]=this_content[2]
@@ -616,7 +641,7 @@ class CDN(object):
             del self.peer_tracking_contents[content_id][peer_id]            
             self.list_replica.append(log_replica)
             
-            if (self.counter%64)==(64-1):
+            if (self.counter%86400)==(86400-1):
                 filename = 'replica-log-' + str(self.counter) + '.pickle'
                 with open(filename,'wb') as fd:
                     pickle.dump(self.list_replica,fd)

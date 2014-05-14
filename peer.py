@@ -173,6 +173,7 @@ class Peer(object):
             #kalau cache penuh cek apakah video ini pertama kali diakses?
 
             minggu,second = divmod(time_cur, 7*24*60*60)
+            minggu = int(minggu)
 
             if cek_pertama_kali == 1:
                 #positif pertama kali diakses
@@ -537,6 +538,7 @@ class Peer(object):
             #kalau cache penuh cek apakah video ini pertama kali diakses?
 
             minggu,second = divmod(time_cur, 7*24*60*60)
+            minggu = int(minggu)
 
             if cek_pertama_kali == 1:
                 #positif pertama kali diakses
