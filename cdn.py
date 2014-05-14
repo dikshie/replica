@@ -6,6 +6,19 @@ import bisect
 import cPickle as pickle
 from operator import itemgetter
 #tandai ini model 
+
+
+fd=open(filename, "r")
+
+x=[]
+y=[]
+z=[]
+for line in fd:
+    x.append( int(line.split()[0]))
+    y.append( int(line.split()[1]))
+    z.append( int(line.split()[2]))
+fd.close()
+
 class CDN(object):
 
     def __init__(self, catalog):
@@ -318,7 +331,7 @@ class CDN(object):
 
 
 
-    def estimasi_vr(self, t_cur):
+    def estimasi_vr(self, t_cur, content_id):
         """
         estimasi t before/at/after berdasarkan minggu dan view rate
         membutuhkan data view_rate dan minggu
@@ -326,8 +339,7 @@ class CDN(object):
         """
         #dapatkan minggu video
         #selisih = t_cur - t_upload
-        upload_time = this_content[1]
-        content_id = this_content[0]
+        upload_time = self.content_catalog[content_id][1]
         waktu_terakhir_akses=self.get_video_last_time_requested(content_id)
         selisih = waktu_terakhir_akses - upload_time
 

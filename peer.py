@@ -153,9 +153,11 @@ class Peer(object):
         #posisi disini diganti dng estimasi t
         #kalau belum pernah diakses akan estimasi dari t
         #kalau sudah pernah diakses akan estimasi dar viewrate
-        
-        posisi_minggu_video_baru = content[4]
+        #posisi_minggu_video_baru = content[4]
         yng_request=self.id
+
+        cek_pertama_kali = self.cdn.get_first_time_requested(content_id)
+
         #check capacity
         if (jumlah+size_video_baru) <= 500: #kurang dari 500MB langsung dicache
             #langsung masuk dicache
@@ -166,306 +168,339 @@ class Peer(object):
             self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
             self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
 
-        elif time_cur < posisi_minggu_video_baru*(7*24*3600): #before peak
-            #kalau cache penuh maka harus ada yng dihapus, content_id dng utility rendah dihapus
-            #lalu bandingkan utility video yng akan masuk dng video yng ada dicache mana yng lebih paling rendah
-            #cek posisi minggu peak
-            #contoh: {0: [0, 5.0775931306168065, 499.0, 3600.0, week]}
-            #harus dihitung utk tiap video yng akan masuk dan video yng ada dicache.
-            #hitung utiliy video yng akan masuk terlebih dahulu
-            
-        
-            #hitung pakai utilitiy min disini.  
-            #hitung p utk video baru
-            #ambil nilai t_ir, n_ir, a_ir
-            n_ir = float(self.cdn.get_number_requested_video(content_id))
-            t_ir = float(self.cdn.get_video_last_time_requested(content_id))
-            a_i = content[1]
-            kanan = (1.0)/abs(time_cur - t_ir)
-            kiri = (n_ir)/abs(t_ir - a_i)
-            P_i = min(kiri,kanan)
 
-            #ambil catatan P_min semua video yng ada di sistem dari cdn
-            P_min = self.cdn.hitung_p_min(time_cur)
+        else:
+            #kalau cache penuh cek apakah video ini pertama kali diakses?
 
-            #ambil catatan jumlah replica content_id ini dari cdn
-            r = self.cdn.get_replica(content_id) 
-            r = float(r)
+            minggu,second = divmod(time_cur, 7*24*60*60)
 
-            if r == 0:
-                utility_video_baru = 0.0
-            elif P_min == 0:
-                #hitung utility video baru
-                utility_video_baru = abs(math.log(P_i))/r        
-            else:
-                utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
-                utility_video_baru = abs(utility_video_baru)
+            if cek_pertama_kali == 1:
+                #positif pertama kali diakses
+                #gunakan tebakan t minggu
+                tebakan_minggu = self.cdn.catatan_weekly(minggu)
+                if tebakan_minggu == 1:
+                    #positif dalam posisi peak
+                    #gunakan utility function peak time
+                    #hitung p utk video baru
+                    #ambil nilai t_ir, n_ir, a_ir utk video baru
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_max semua video yng ada di sistem dari cdn 
+                    P_max = self.cdn.hitung_p_max(time_cur)
 
-            #hitung p utk video didalam cache
-            #ambil content id yng sudah ada didalam cache
-            temp_1={}
-            utility=0
-            content_id_dicache=self.cache_entries.keys()
-            for con in content_id_dicache:
-                #ambil nilai t_ir, n_ir, a_ir
-                n_ir = float(self.cdn.get_number_requested_video(con))
-                t_ir = float(self.cdn.get_video_last_time_requested(con))
-                a_i = self.cdn.get_upload_time(con)
-                kanan = (1.0)/abs(time_cur - t_ir)
-                kiri = (n_ir)/abs(t_ir - a_i)
-                P_i = min(kiri,kanan)
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
 
-                #ambil catatan jumlah replica tiap con dari cdn
-                r = self.cdn.get_replica(con)
-                r = float(r)
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_i == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_max))/r
+                    else:
+                        utility_video_baru = abs(math.log(P_max)) - abs(math.log(P_i))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_2={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir utk con (dalam cache)
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
 
-                if r == 0:
-                    utility=0.0
-                elif P_min == 0:
-                    utility = abs(math.log(P_i))/r
-                    utility = abs(utility)
-                else:
-                    utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
-                    utility = abs(utility)
-                temp_1[con]=utility
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
 
-            #cari minimum utility video didalam cache
-            #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
-            #sorted dictionary by values (utility):
-            list_sorted_utility = sorted(temp_1.items(), key=itemgetter(1))
-            utility_min_video_dicache = list_sorted_utility[0][1]
-
-            #bandingkan utility video didalam cache dng video yng akan masuk
-            #bila p_min dalam cache lebih kecil:
-            if utility_min_video_dicache < utility_video_baru:
-                jumlah=sum(self.cache_size.values())
-                #disini secaraiterative hapus cache
-                while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
-                    tup = list_sorted_utility.pop(0)
-                    video_id_dng_u_min = tup[0]
-                    video_size_dng_u_min = tup[1]
-                    #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [video_id_dng_u_min])
-                    
-                    del self.cache_size[video_id_dng_u_min]
-                    del self.cache_entries[video_id_dng_u_min]
-                    
-                    self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
-                    self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
-                    del self.log_replica[video_id_dng_u_min]
-
-                    jumlah=sum(self.cache_size.values())
-                    #return [expire_event],[]
-
-                #setelah jumlah <= 500 maka
-                #cache utk video baru yng masuk
-                self.cache_entries[content_id]=content_baru
-                self.cache_size[content_id]=size_video_baru
-                self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
-                self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
-            else:
-                #else: kalau video baru lebih kecil nilai utilitynya
-                #video baru tdk perlu dicache
-                #bikin expire event utk video baru
-                #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [content_id])
-                #self.cdn.receive_report_from_peer(self.id, content_id, 'REMOVE_CACHE')
-                #del self.cache_size[content_id]
-                #del self.cache_entries[content_id]
-                #return [expire_event],[]
-                pass
-
-
-        elif time_cur >= posisi_minggu_video_baru*(7*24*3600) and time_cur < (posisi_minggu_video_baru+1)*(7*24*3600):
-            #hitung pakai utility max
-            #hitung p utk video baru
-            #ambil nilai t_ir, n_ir, a_ir utk video baru
-            n_ir = float(self.cdn.get_number_requested_video(content_id))
-            t_ir = float(self.cdn.get_video_last_time_requested(content_id))
-            a_i = content[1]
-            kanan = (1.0)/abs(time_cur - t_ir)
-            kiri = (n_ir)/abs(t_ir - a_i)
-            P_i = min(kiri,kanan)
-
-            #ambil catatan P_max semua video yng ada di sistem dari cdn 
-            P_max = self.cdn.hitung_p_max(time_cur)
-
-            #ambil catatan jumlah replica content_id ini dari cdn
-            r = self.cdn.get_replica(content_id) 
-            r = float(r)
-
-            if r == 0:
-                utility_video_baru = 0.0
-            elif P_i == 0:
-                #hitung utility video baru
-                utility_video_baru = abs(math.log(P_max))/r
-            else:
-                utility_video_baru = abs(math.log(P_max)) - abs(math.log(P_i))/r
-                utility_video_baru = abs(utility_video_baru)
-
-            #hitung p utk video didalam cache
-            #ambil content id yng sudah ada didalam cache
-            temp_2={}
-            utility=0
-            content_id_dicache=self.cache_entries.keys()
-            for con in content_id_dicache:
-                #ambil nilai t_ir, n_ir, a_ir utk con (dalam cache)
-                n_ir = float(self.cdn.get_number_requested_video(con))
-                t_ir = float(self.cdn.get_video_last_time_requested(con))
-                a_i = self.cdn.get_upload_time(con)
-                kanan = (1.0)/abs(time_cur - t_ir)
-                kiri = (n_ir)/abs(t_ir - a_i)
-                P_i = min(kiri,kanan)
-
-                #ambil catatan jumlah replica tiap con dari cdn
-                r = self.cdn.get_replica(con)
-                r = float(r)
-
-                if r == 0:
-                    utility = 0.0
-                elif P_i == 0:
-                    utility = abs(math.log(P_max))/r
-                else:
-                    utility = abs(math.log(P_max)) - abs(math.log(P_i)) / r
-                    utility = abs(utility)
-                temp_2[con]=utility
-
-            #cari minimum utility video didalam cache
-            #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
-            #sorted dictionary by values (utility):
-            list_sorted_utility = sorted(temp_2.items(), key=itemgetter(1))
-            #hasilnya berupa list of tuple
-            utility_min_video_dicache = list_sorted_utility[0][1]
+                        if r == 0:
+                            utility = 0.0
+                        elif P_i == 0:
+                            utility = abs(math.log(P_max))/r
+                        else:
+                            utility = abs(math.log(P_max)) - abs(math.log(P_i)) / r
+                            utility = abs(utility)
+                        temp_2[con]=utility
+                    #cari minimum utility video didalam cache
+                    #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_2.items(), key=itemgetter(1))
+                    #hasilnya berupa list of tuple
+                    utility_min_video_dicache = list_sorted_utility[0][1]
                 
-            #bandingkan utility video didalam cache dng video yng akan masuk
-            #bila utility min dalam cache lebih kecil:
-            if utility_min_video_dicache < utility_video_baru:
-                jumlah=sum(self.cache_size.values())
-                #disini secaraiterative hapus cache
-                while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
-                    tup = list_sorted_utility.pop(0)
-                    video_id_dng_u_min = tup[0]
-                    video_size_dng_u_min = tup[1]
-                    #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [video_id_dng_u_min])
-                    
-                    del self.cache_size[video_id_dng_u_min]
-                    del self.cache_entries[video_id_dng_u_min]
-
-                    self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
-                    self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
-                    del self.log_replica[video_id_dng_u_min]
-
-                    jumlah=sum(self.cache_size.values())
-                    #return [expire_event],[]
-
-                #setelah jumlah+size_video_baru <= 500 maka
-                #cache utk video baru yng masuk
-                self.cache_entries[content_id]=content_baru
-                self.cache_size[content_id]=size_video_baru
-                self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
-                self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
-            else:
-                #else: kalau video baru lebih kecil nilai utilitynya
-                #video baru tdk perlu dicache
-                #bikin expire event utk video baru
-                #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [content_id])
-                #return [expire_event],[]
-                pass
-
-
-        elif time_cur >= (posisi_minggu_video_baru+1)*(7*24*3600):
-            #hitung pakai utility min
-            #hitung p utk video baru
-            n_ir = float(self.cdn.get_number_requested_video(content_id))
-            t_ir = float(self.cdn.get_video_last_time_requested(content_id))
-            a_i = content[1] #pertamakali video diupload
-            kanan = (1.0)/abs(time_cur - t_ir)
-            kiri = (n_ir)/abs(t_ir - a_i)
-            P_i = min(kiri,kanan)
-                
-            #ambil catatan P_min semua video yng ada di sistem dari cdn
-            P_min = self.cdn.hitung_p_min(time_cur)
-
-            #ambil catatan jumlah replica content_id ini dari cdn
-            r = self.cdn.get_replica(content_id) 
-            r = float(r)
-            if r == 0:
-                utility_video_baru = 0.0
-            elif P_min == 0:
-                #hitung utility video baru
-                utility_video_baru = abs(math.log(P_i))/r
-            else:
-                utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
-                utility_video_baru = abs(utility_video_baru)
-
-            #hitung p utk video didalam cache
-            #ambil content id yng sudah ada didalam cache
-            temp_3={}
-            utility=0
-            content_id_dicache=self.cache_entries.keys()
-            for con in content_id_dicache:
-                #ambil nilai t_ir, n_ir, a_ir
-                n_ir = float(self.cdn.get_number_requested_video(con))
-                t_ir = float(self.cdn.get_video_last_time_requested(con))
-                a_i = self.cdn.get_upload_time(con)
-                kanan = (1.0)/abs(time_cur - t_ir)
-                kiri = (n_ir)/abs(t_ir - a_i)
-                P_i = min(kiri,kanan)
-
-                #ambil catatan jumlah replica tiap con dari cdn
-                r = self.cdn.get_replica(con)
-                r = float(r)
-
-                if r == 0:
-                    utility = 0.0
-                elif P_min == 0:
-                    utility = abs(math.log(P_i))/r
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila utility min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah+size_video_baru <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
                 else:
-                    utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
-                temp_3[con]=utility
+                    #dalam posisi before peak/after peak
+                    #gunakan utility function before/after
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_min semua video yng ada di sistem dari cdn
+                    P_min = self.cdn.hitung_p_min(time_cur)
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_min == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_i))/r 
+                    else:
+                        utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_1={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
+                        if r == 0:
+                            utility=0.0
+                        elif P_min == 0:
+                            utility = abs(math.log(P_i))/r
+                            utility = abs(utility)
+                        else:
+                            utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
+                            utility = abs(utility)
+                        temp_1[con]=utility
+                    #cari minimum utility video didalam cache
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_1.items(), key=itemgetter(1))
+                    utility_min_video_dicache = list_sorted_utility[0][1]
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila p_min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
 
 
-            #cari minimum utility video didalam cache
-            #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
-            #sorted dictionary by values (utility):
-            list_sorted_utility = sorted(temp_3.items(), key=itemgetter(1))
-            utility_min_video_dicache = list_sorted_utility[0][1]
-
-            #bandingkan utility video didalam cache dng video yng akan masuk
-            #bila p_min dalam cache lebih kecil:
-            if utility_min_video_dicache < utility_video_baru:
-                jumlah=sum(self.cache_size.values())
-                #disini secara iterative hapus cache
-                while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
-                    tup = list_sorted_utility.pop(0)
-                    video_id_dng_u_min = tup[0]
-                    video_size_dng_u_min = tup[1]
-                    #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [video_id_dng_u_min])
-                    
-                    del self.cache_size[video_id_dng_u_min]
-                    del self.cache_entries[video_id_dng_u_min]
-
-                    self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
-                    self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
-                    del self.log_replica[video_id_dng_u_min]
-
-                    jumlah=sum(self.cache_size.values())
-                    #return [expire_event],[]
-
-                #setelah jumlah <= 500 maka
-                #cache utk video baru yng masuk
-                self.cache_entries[content_id]=content_baru
-                self.cache_size[content_id]=size_video_baru
-                self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
-                self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
             else:
-                #else: kalau video baru lebih kecil nilai utilitynya
-                #video baru tdk perlu dicache
-                #bikin expire event utk video baru
-                #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [content_id])
-                #return [expire_event],[]
-                pass
+                #tdk pertama kali diakses
+                #gunakan tebakan viewrate
+                hasil = self.cdn.estimasi_vr(time_cur,content_id)
+                if hasil == 0:
+                    #peak time
+                    #gunakan utility function peak-time
+                    #positif dalam posisi peak
+                    #gunakan utility function peak time
+                    #hitung p utk video baru
+                    #ambil nilai t_ir, n_ir, a_ir utk video baru
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_max semua video yng ada di sistem dari cdn 
+                    P_max = self.cdn.hitung_p_max(time_cur)
 
-        else: 
-            pass
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
+
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_i == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_max))/r
+                    else:
+                        utility_video_baru = abs(math.log(P_max)) - abs(math.log(P_i))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_2={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir utk con (dalam cache)
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
+
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
+
+                        if r == 0:
+                            utility = 0.0
+                        elif P_i == 0:
+                            utility = abs(math.log(P_max))/r
+                        else:
+                            utility = abs(math.log(P_max)) - abs(math.log(P_i)) / r
+                            utility = abs(utility)
+                        temp_2[con]=utility
+                    #cari minimum utility video didalam cache
+                    #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_2.items(), key=itemgetter(1))
+                    #hasilnya berupa list of tuple
+                    utility_min_video_dicache = list_sorted_utility[0][1]
+                
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila utility min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah+size_video_baru <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
+
+                else:
+                    #before atau after
+                    #gunakan utility function before/after
+                    #dalam posisi before peak/after peak
+                    #gunakan utility function before/after
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_min semua video yng ada di sistem dari cdn
+                    P_min = self.cdn.hitung_p_min(time_cur)
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_min == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_i))/r 
+                    else:
+                        utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_1={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
+                        if r == 0:
+                            utility=0.0
+                        elif P_min == 0:
+                            utility = abs(math.log(P_i))/r
+                            utility = abs(utility)
+                        else:
+                            utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
+                            utility = abs(utility)
+                        temp_1[con]=utility
+                    #cari minimum utility video didalam cache
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_1.items(), key=itemgetter(1))
+                    utility_min_video_dicache = list_sorted_utility[0][1]
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila p_min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
         return [],[]
 
 
@@ -478,319 +513,359 @@ class Peer(object):
         size_video_baru = content[2]
         jumlah=sum(self.cache_size.values())
         content_baru=[ content[0], content[1], content[2], time_cur, content[4] ]
-        posisi_minggu_video_baru = content[4]
+
+        #posisi disini diganti dng estimasi t
+        #kalau belum pernah diakses akan estimasi dari t
+        #kalau sudah pernah diakses akan estimasi dar viewrate
+        #posisi_minggu_video_baru = content[4]
         yng_request=self.id
+
+        cek_pertama_kali = self.cdn.get_first_time_requested(content_id)
+
         #check capacity
         if (jumlah+size_video_baru) <= 500: #kurang dari 500MB langsung dicache
             #langsung masuk dicache
             content_baru=[ content[0], content[1], content[2], time_cur, content[4] ]
             self.cache_entries[content_id]=content_baru
             self.cache_size[content_id]=size_video_baru
-            self.log_replica[content_id]={'content-id':content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+            #video_id:{ 'self-id’: self.id,  =’t_di_cache’=float,  ’t_di_remove’=float, t_di_access=[(t,peer_origin),…] }
+            self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
             self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
 
-        elif time_cur < posisi_minggu_video_baru*(7*24*3600): #before peak
-            #kalau cache penuh maka harus ada yng dihapus, content_id dng utility rendah dihapus
-            #lalu bandingkan utility video yng akan masuk dng video yng ada dicache mana yng lebih paling rendah
-            #cek posisi minggu peak
-            #contoh: {0: [0, 5.0775931306168065, 499.0, 3600.0, week]}
-            #harus dihitung utk tiap video yng akan masuk dan video yng ada dicache.
-            #hitung utiliy video yng akan masuk terlebih dahulu
-            
-        
-            #hitung pakai utilitiy min disini.  
-            #hitung p utk video baru
-            #ambil nilai t_ir, n_ir, a_ir
-            n_ir = float(self.cdn.get_number_requested_video(content_id))
-            t_ir = float(self.cdn.get_video_last_time_requested(content_id))
-            a_i = content[1]
-            kanan = (1.0)/abs(time_cur - t_ir)
-            kiri = (n_ir)/abs(t_ir - a_i)
-            P_i = min(kiri,kanan)
 
-            #ambil catatan P_min semua video yng ada di sistem dari cdn
-            P_min = self.cdn.hitung_p_min(time_cur)
+        else:
+            #kalau cache penuh cek apakah video ini pertama kali diakses?
 
-            #ambil catatan jumlah replica content_id ini dari cdn
-            r = self.cdn.get_replica(content_id) 
-            r = float(r)
+            minggu,second = divmod(time_cur, 7*24*60*60)
 
-            if r == 0:
-                utility_video_baru = 0.0
-            elif P_min == 0:
-                #hitung utility video baru
-                utility_video_baru = abs(math.log(P_i))/r        
-            else:
-                utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
-                utility_video_baru = abs(utility_video_baru)
+            if cek_pertama_kali == 1:
+                #positif pertama kali diakses
+                #gunakan tebakan t minggu
+                tebakan_minggu = self.cdn.catatan_weekly(minggu)
+                if tebakan_minggu == 1:
+                    #positif dalam posisi peak
+                    #gunakan utility function peak time
+                    #hitung p utk video baru
+                    #ambil nilai t_ir, n_ir, a_ir utk video baru
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_max semua video yng ada di sistem dari cdn 
+                    P_max = self.cdn.hitung_p_max(time_cur)
 
-            #hitung p utk video didalam cache
-            #ambil content id yng sudah ada didalam cache
-            temp_1={}
-            utility=0
-            content_id_dicache=self.cache_entries.keys()
-            for con in content_id_dicache:
-                #ambil nilai t_ir, n_ir, a_ir
-                n_ir = float(self.cdn.get_number_requested_video(con))
-                t_ir = float(self.cdn.get_video_last_time_requested(con))
-                a_i = self.cdn.get_upload_time(con)
-                kanan = (1.0)/abs(time_cur - t_ir)
-                kiri = (n_ir)/abs(t_ir - a_i)
-                P_i = min(kiri,kanan)
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
 
-                #ambil catatan jumlah replica tiap con dari cdn
-                r = self.cdn.get_replica(con)
-                r = float(r)
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_i == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_max))/r
+                    else:
+                        utility_video_baru = abs(math.log(P_max)) - abs(math.log(P_i))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_2={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir utk con (dalam cache)
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
 
-                if r == 0:
-                    utility=0.0
-                elif P_min == 0:
-                    utility = abs(math.log(P_i))/r
-                    utility = abs(utility)
-                else:
-                    utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
-                    utility = abs(utility)
-                temp_1[con]=utility
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
 
-            #cari minimum utility video didalam cache
-            #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
-            #sorted dictionary by values (utility):
-            list_sorted_utility = sorted(temp_1.items(), key=itemgetter(1))
-            utility_min_video_dicache = list_sorted_utility[0][1]
-
-            #bandingkan utility video didalam cache dng video yng akan masuk
-            #bila p_min dalam cache lebih kecil:
-            if utility_min_video_dicache < utility_video_baru:
-                jumlah=sum(self.cache_size.values())
-                #disini secaraiterative hapus cache
-                while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
-                    tup = list_sorted_utility.pop(0)
-                    video_id_dng_u_min = tup[0]
-                    video_size_dng_u_min = tup[1]
-                    #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [video_id_dng_u_min])
-                    
-                    del self.cache_size[video_id_dng_u_min]
-                    del self.cache_entries[video_id_dng_u_min]
-                    
-                    self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
-                    self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
-                    del self.log_replica[video_id_dng_u_min]
-
-                    jumlah=sum(self.cache_size.values())
-
-                    #return [expire_event],[]
-
-                #setelah jumlah <= 500 maka
-                #cache utk video baru yng masuk
-                self.cache_entries[content_id]=content_baru
-                self.cache_size[content_id]=size_video_baru
-                self.log_replica[content_id]={'content-id':content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
-                self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
-            else:
-                #else: kalau video baru lebih kecil nilai utilitynya
-                #video baru tdk perlu dicache
-                #bikin expire event utk video baru
-                #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [content_id])
-                #self.cdn.receive_report_from_peer(self.id, content_id, 'REMOVE_CACHE')
-                #del self.cache_size[content_id]
-                #del self.cache_entries[content_id]
-                #return [expire_event],[]
-                pass
-
-
-        elif time_cur >= posisi_minggu_video_baru*(7*24*3600) and time_cur < (posisi_minggu_video_baru+1)*(7*24*3600):
-            #hitung pakai utility max
-            #hitung p utk video baru
-            #ambil nilai t_ir, n_ir, a_ir utk video baru
-            n_ir = float(self.cdn.get_number_requested_video(content_id))
-            t_ir = float(self.cdn.get_video_last_time_requested(content_id))
-            a_i = content[1]
-            kanan = (1.0)/abs(time_cur - t_ir)
-            kiri = (n_ir)/abs(t_ir - a_i)
-            P_i = min(kiri,kanan)
-
-            #ambil catatan P_max semua video yng ada di sistem dari cdn 
-            P_max = self.cdn.hitung_p_max(time_cur)
-
-            #ambil catatan jumlah replica content_id ini dari cdn
-            r = self.cdn.get_replica(content_id) 
-            r = float(r)
-
-            if r == 0:
-                utility_video_baru = 0.0
-            elif P_i == 0:
-                #hitung utility video baru
-                utility_video_baru = abs(math.log(P_max))/r
-            else:
-                utility_video_baru = abs(math.log(P_max)) - abs(math.log(P_i))/r
-                utility_video_baru = abs(utility_video_baru)
-
-            #hitung p utk video didalam cache
-            #ambil content id yng sudah ada didalam cache
-            temp_2={}
-            utility=0
-            content_id_dicache=self.cache_entries.keys()
-            for con in content_id_dicache:
-                #ambil nilai t_ir, n_ir, a_ir utk con (dalam cache)
-                n_ir = float(self.cdn.get_number_requested_video(con))
-                t_ir = float(self.cdn.get_video_last_time_requested(con))
-                a_i = self.cdn.get_upload_time(con)
-                kanan = (1.0)/abs(time_cur - t_ir)
-                kiri = (n_ir)/abs(t_ir - a_i)
-                P_i = min(kiri,kanan)
-
-                #ambil catatan jumlah replica tiap con dari cdn
-                r = self.cdn.get_replica(con)
-                r = float(r)
-
-                if r == 0:
-                    utility = 0.0
-                elif P_i == 0:
-                    utility = abs(math.log(P_max))/r
-                else:
-                    utility = abs(math.log(P_max)) - abs(math.log(P_i)) / r
-                    utility = abs(utility)
-                temp_2[con]=utility
-
-            #cari minimum utility video didalam cache
-            #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
-            #sorted dictionary by values (utility):
-            list_sorted_utility = sorted(temp_2.items(), key=itemgetter(1))
-            #hasilnya berupa list of tuple
-            utility_min_video_dicache = list_sorted_utility[0][1]
+                        if r == 0:
+                            utility = 0.0
+                        elif P_i == 0:
+                            utility = abs(math.log(P_max))/r
+                        else:
+                            utility = abs(math.log(P_max)) - abs(math.log(P_i)) / r
+                            utility = abs(utility)
+                        temp_2[con]=utility
+                    #cari minimum utility video didalam cache
+                    #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_2.items(), key=itemgetter(1))
+                    #hasilnya berupa list of tuple
+                    utility_min_video_dicache = list_sorted_utility[0][1]
                 
-            #bandingkan utility video didalam cache dng video yng akan masuk
-            #bila utility min dalam cache lebih kecil:
-            if utility_min_video_dicache < utility_video_baru:
-                jumlah=sum(self.cache_size.values())
-                #disini secaraiterative hapus cache
-                while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
-                    tup = list_sorted_utility.pop(0)
-                    video_id_dng_u_min = tup[0]
-                    video_size_dng_u_min = tup[1]
-                    #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [video_id_dng_u_min])
-                    
-                    del self.cache_size[video_id_dng_u_min]
-                    del self.cache_entries[video_id_dng_u_min]
-
-                    self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
-                    self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
-                    del self.log_replica[video_id_dng_u_min]
-
-                    jumlah=sum(self.cache_size.values())
-                    #return [expire_event],[]
-
-                #setelah jumlah+size_video_baru <= 500 maka
-                #cache utk video baru yng masuk
-                self.cache_entries[content_id]=content_baru
-                self.cache_size[content_id]=size_video_baru
-                self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
-                self.log_replica[content_id]={'content-id':content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
-            else:
-                #else: kalau video baru lebih kecil nilai utilitynya
-                #video baru tdk perlu dicache
-                #bikin expire event utk video baru
-                #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [content_id])
-                #return [expire_event],[]
-                pass
-
-
-        elif time_cur >= (posisi_minggu_video_baru+1)*(7*24*3600):
-            #hitung pakai utility min
-            #hitung p utk video baru
-            n_ir = float(self.cdn.get_number_requested_video(content_id))
-            t_ir = float(self.cdn.get_video_last_time_requested(content_id))
-            a_i = content[1]
-            kanan = (1.0)/abs(time_cur - t_ir)
-            kiri = (n_ir)/abs(t_ir - a_i)
-            P_i = min(kiri,kanan)
-                
-            #ambil catatan P_min semua video yng ada di sistem dari cdn
-            P_min = self.cdn.hitung_p_min(time_cur)
-
-            #ambil catatan jumlah replica content_id ini dari cdn
-            r = self.cdn.get_replica(content_id) 
-            r = float(r)
-            if r == 0:
-                utility_video_baru = 0.0
-            elif P_min == 0:
-                #hitung utility video baru
-                utility_video_baru = abs(math.log(P_i))/r
-            else:
-                utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
-                utility_video_baru = abs(utility_video_baru)
-
-            #hitung p utk video didalam cache
-            #ambil content id yng sudah ada didalam cache
-            temp_3={}
-            utility=0
-            content_id_dicache=self.cache_entries.keys()
-            for con in content_id_dicache:
-                #ambil nilai t_ir, n_ir, a_ir
-                n_ir = float(self.cdn.get_number_requested_video(con))
-                t_ir = float(self.cdn.get_video_last_time_requested(con))
-                a_i = self.cdn.get_upload_time(con)
-                kanan = (1.0)/abs(time_cur - t_ir)
-                kiri = (n_ir)/abs(t_ir - a_i)
-                P_i = min(kiri,kanan)
-
-                #ambil catatan jumlah replica tiap con dari cdn
-                r = self.cdn.get_replica(con)
-                r = float(r)
-
-                if r == 0:
-                    utility = 0.0
-                elif P_min == 0:
-                    utility = abs(math.log(P_i))/r
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila utility min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah+size_video_baru <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
                 else:
-                    utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
-                temp_3[con]=utility
+                    #dalam posisi before peak/after peak
+                    #gunakan utility function before/after
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_min semua video yng ada di sistem dari cdn
+                    P_min = self.cdn.hitung_p_min(time_cur)
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_min == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_i))/r 
+                    else:
+                        utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_1={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
+                        if r == 0:
+                            utility=0.0
+                        elif P_min == 0:
+                            utility = abs(math.log(P_i))/r
+                            utility = abs(utility)
+                        else:
+                            utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
+                            utility = abs(utility)
+                        temp_1[con]=utility
+                    #cari minimum utility video didalam cache
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_1.items(), key=itemgetter(1))
+                    utility_min_video_dicache = list_sorted_utility[0][1]
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila p_min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
 
-
-            #cari minimum utility video didalam cache
-            #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
-            #sorted dictionary by values (utility):
-            list_sorted_utility = sorted(temp_3.items(), key=itemgetter(1))
-            utility_min_video_dicache = list_sorted_utility[0][1]
-
-            #bandingkan utility video didalam cache dng video yng akan masuk
-            #bila p_min dalam cache lebih kecil:
-            if utility_min_video_dicache < utility_video_baru:
-                jumlah=sum(self.cache_size.values())
-                #disini secara iterative hapus cache
-                while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
-                    tup = list_sorted_utility.pop(0)
-                    video_id_dng_u_min = tup[0]
-                    video_size_dng_u_min = tup[1]
-                    #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [video_id_dng_u_min])
-                    
-                    del self.cache_size[video_id_dng_u_min]
-                    del self.cache_entries[video_id_dng_u_min]
-
-                    self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
-                    self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
-                    del self.log_replica[video_id_dng_u_min]
-
-                    jumlah=sum(self.cache_size.values())
-                    #return [expire_event],[]
-
-                #setelah jumlah <= 500 maka
-                #cache utk video baru yng masuk
-                self.cache_entries[content_id]=content_baru
-                self.cache_size[content_id]=size_video_baru
-                self.log_replica[content_id]={'content-id':content_id', peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
-                self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
             else:
-                #else: kalau video baru lebih kecil nilai utilitynya
-                #video baru tdk perlu dicache
-                #bikin expire event utk video baru
-                #expire_event=event.Event(event.REMOVE_CONTENT, time_cur, self, self.remove_content, [content_id])
-                #return [expire_event],[]
-                pass
+                #tdk pertama kali diakses
+                #gunakan tebakan viewrate
+                hasil = self.cdn.estimasi_vr(time_cur,content_id)
+                if hasil == 0:
+                    #peak time
+                    #gunakan utility function peak-time
+                    #positif dalam posisi peak
+                    #gunakan utility function peak time
+                    #hitung p utk video baru
+                    #ambil nilai t_ir, n_ir, a_ir utk video baru
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_max semua video yng ada di sistem dari cdn 
+                    P_max = self.cdn.hitung_p_max(time_cur)
 
-        else: 
-            pass
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
+
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_i == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_max))/r
+                    else:
+                        utility_video_baru = abs(math.log(P_max)) - abs(math.log(P_i))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_2={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir utk con (dalam cache)
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
+
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
+
+                        if r == 0:
+                            utility = 0.0
+                        elif P_i == 0:
+                            utility = abs(math.log(P_max))/r
+                        else:
+                            utility = abs(math.log(P_max)) - abs(math.log(P_i)) / r
+                            utility = abs(utility)
+                        temp_2[con]=utility
+                    #cari minimum utility video didalam cache
+                    #video_id_dng_u_min = min(temp_1, key = lambda x: temp_1.get(x) )
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_2.items(), key=itemgetter(1))
+                    #hasilnya berupa list of tuple
+                    utility_min_video_dicache = list_sorted_utility[0][1]
+                
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila utility min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah+size_video_baru <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
+
+                else:
+                    #before atau after
+                    #gunakan utility function before/after
+                    #dalam posisi before peak/after peak
+                    #gunakan utility function before/after
+                    t_ir = float(self.cdn.get_video_last_time_requested(content_id))
+                    n_ir = float(self.cdn.get_number_requested_video(content_id))
+                    a_i = content[1]
+                    kanan = (1.0)/abs(time_cur - t_ir)
+                    kiri = (n_ir)/abs(t_ir - a_i)
+                    P_i = min(kiri,kanan)
+                    #ambil catatan P_min semua video yng ada di sistem dari cdn
+                    P_min = self.cdn.hitung_p_min(time_cur)
+                    #ambil catatan jumlah replica content_id ini dari cdn
+                    r = self.cdn.get_replica(content_id) 
+                    r = float(r)
+                    if r == 0:
+                        utility_video_baru = 0.0
+                    elif P_min == 0:
+                        #hitung utility video baru
+                        utility_video_baru = abs(math.log(P_i))/r 
+                    else:
+                        utility_video_baru = abs(math.log(P_i)) - abs(math.log(P_min))/r
+                        utility_video_baru = abs(utility_video_baru)
+                    #hitung p utk video didalam cache
+                    #ambil content id yng sudah ada didalam cache
+                    temp_1={}
+                    utility=0
+                    content_id_dicache=self.cache_entries.keys()
+                    for con in content_id_dicache:
+                        #ambil nilai t_ir, n_ir, a_ir
+                        n_ir = float(self.cdn.get_number_requested_video(con))
+                        t_ir = float(self.cdn.get_video_last_time_requested(con))
+                        a_i = self.cdn.get_upload_time(con)
+                        kanan = (1.0)/abs(time_cur - t_ir)
+                        kiri = (n_ir)/abs(t_ir - a_i)
+                        P_i = min(kiri,kanan)
+                        #ambil catatan jumlah replica tiap con dari cdn
+                        r = self.cdn.get_replica(con)
+                        r = float(r)
+                        if r == 0:
+                            utility=0.0
+                        elif P_min == 0:
+                            utility = abs(math.log(P_i))/r
+                            utility = abs(utility)
+                        else:
+                            utility = abs(math.log(P_i)) - abs(math.log(P_min)) / r
+                            utility = abs(utility)
+                        temp_1[con]=utility
+                    #cari minimum utility video didalam cache
+                    #sorted dictionary by values (utility):
+                    list_sorted_utility = sorted(temp_1.items(), key=itemgetter(1))
+                    utility_min_video_dicache = list_sorted_utility[0][1]
+                    #bandingkan utility video didalam cache dng video yng akan masuk
+                    #bila p_min dalam cache lebih kecil:
+                    if utility_min_video_dicache < utility_video_baru:
+                        jumlah=sum(self.cache_size.values())
+                        #disini secaraiterative hapus cache
+                        while (jumlah+size_video_baru) >= 500: #selama jumlah >= 500 hapus terus cache
+                            tup = list_sorted_utility.pop(0)
+                            video_id_dng_u_min = tup[0]
+                            video_size_dng_u_min = tup[1]
+                            del self.cache_size[video_id_dng_u_min]
+                            del self.cache_entries[video_id_dng_u_min]
+                            self.log_replica[video_id_dng_u_min]['t_di_remove']=time_cur
+                            self.cdn.receive_report_from_peer(self.id, video_id_dng_u_min, 'REMOVE_CACHE', time_cur, yng_request,self.log_replica[video_id_dng_u_min])
+                            del self.log_replica[video_id_dng_u_min]
+                            jumlah=sum(self.cache_size.values())
+                        #setelah jumlah <= 500 maka
+                        #cache utk video baru yng masuk
+                        self.cache_entries[content_id]=content_baru
+                        self.cache_size[content_id]=size_video_baru
+                        self.log_replica[content_id]={'content-id': content_id, 'peer-id': self.id, 't_di_cache': time_cur, 't_di_access': [] , 't_di_remove':0 }
+                        self.cdn.receive_report_from_peer(self.id, content_id, 'CACHE', time_cur, yng_request)
+                    else:
+                        pass
         return [],[]
+
 
 
     
